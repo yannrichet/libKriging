@@ -124,63 +124,68 @@ double OrdinaryKriging::fit_ofn(const arma::vec& _theta,
                                 OrdinaryKriging::OKModel* okm_data) const {
   OrdinaryKriging::OKModel* fd = okm_data;
 
-  // arma::cout << "_theta:" << _theta << arma::endl;
-
-  //' @ref https://github.com/cran/DiceKriging/blob/master/R/logLikFun.R
-  //  model@covariance <- vect2covparam(model@covariance, param)
-  //  model@covariance@sd2 <- 1		# to get the correlation matrix
-  //
-  //  aux <- covMatrix(model@covariance, model@X)
-  //
-  //  R <- aux[[1]]
-  //  T <- chol(R)
-  //
-  //  x <- backsolve(t(T), model@y, upper.tri = FALSE)
-  //  M <- backsolve(t(T), model@F, upper.tri = FALSE)
-  //  z <- compute.z(x=x, M=M, beta=beta)
-  //  sigma2.hat <- compute.sigma2.hat(z)
-  //  logLik <- -0.5*(model@n * log(2*pi*sigma2.hat) + 2*sum(log(diag(T))) + model@n)
-
-  arma::mat Xtnorm = trans(m_X);
-  Xtnorm.each_col() /= _theta;
-
   arma::uword n = m_X.n_rows;
+  
+  if ( ! approx_equal(fd->last_theta, _theta,"abstol",1e-8)) {
+    fd->last_theta = _theta;
+    
+    // arma::cout << "_theta:" << _theta << arma::endl;
 
-  // Define regression matrix
-  arma::uword nreg = 1;
-  arma::mat F = arma::ones(n, nreg);
-
-  // Allocate the matrix // arma::mat R = Cov(fd->X, _theta);
-  // Should be replaced by for_each
-  arma::mat R = arma::zeros(n,n);
-  for (arma::uword i = 0; i < n; i++) {
-    for (arma::uword j = 0; j < i; j++) {
-      R.at(i, j) = CovNorm_fun(Xtnorm.col(i), Xtnorm.col(j));
+    //' @ref https://github.com/cran/DiceKriging/blob/master/R/logLikFun.R
+    //  model@covariance <- vect2covparam(model@covariance, param)
+    //  model@covariance@sd2 <- 1		# to get the correlation matrix
+    //
+    //  aux <- covMatrix(model@covariance, model@X)
+    //
+    //  R <- aux[[1]]
+    //  T <- chol(R)
+    //
+    //  x <- backsolve(t(T), model@y, upper.tri = FALSE)
+    //  M <- backsolve(t(T), model@F, upper.tri = FALSE)
+    //  z <- compute.z(x=x, M=M, beta=beta)
+    //  sigma2.hat <- compute.sigma2.hat(z)
+    //  logLik <- -0.5*(model@n * log(2*pi*sigma2.hat) + 2*sum(log(diag(T))) + model@n)
+  
+    fd->Xtnorm = trans(m_X);
+    fd->Xtnorm.each_col() /= _theta;
+  
+    // Define regression matrix
+    arma::uword nreg = 1;
+    arma::mat F = arma::ones(n, nreg);
+  
+    // Allocate the matrix // arma::mat R = Cov(fd->X, _theta);
+    // Should be replaced by for_each
+    arma::mat R = arma::zeros(n,n);
+    for (arma::uword i = 0; i < n; i++) {
+      for (arma::uword j = 0; j < i; j++) {
+        R.at(i, j) = CovNorm_fun(fd->Xtnorm.col(i), fd->Xtnorm.col(j));
+      }
     }
-  }
-  R = arma::symmatl(R);  // R + trans(R);
-  R.diag().ones();
-  // arma::cout << "R:" << R << arma::endl;
+    R = arma::symmatl(R);  // R + trans(R);
+    R.diag().ones();
+    
+    // arma::cout << "R:" << R << arma::endl;
+  
+    // Cholesky decompostion of covariance matrix
+    fd->T = trans(chol(R));
+  
+    // Compute intermediate useful matrices
+    arma::mat M = solve(trimatl(fd->T), F,arma::solve_opts::fast);
+  
+    // Compute z
+    arma::mat Q;
+    arma::mat G;
+    qr_econ(Q, G, M);
+    arma::colvec Yt = solve(trimatl(fd->T), m_y, arma::solve_opts::fast);
+    arma::colvec beta = solve(trimatu(G), trans(Q) * Yt, arma::solve_opts::fast);
+    fd->z = Yt - M * beta;
 
-  // Cholesky decompostion of covariance matrix
-  fd->T = trans(chol(R));
-
-  // Compute intermediate useful matrices
-  arma::mat M = solve(trimatl(fd->T), F,arma::solve_opts::fast);
-
-  // Compute z
-  arma::mat Q;
-  arma::mat G;
-  qr_econ(Q, G, M);
-  arma::colvec Yt = solve(trimatl(fd->T), m_y, arma::solve_opts::fast);
-  arma::colvec beta = solve(trimatu(G), trans(Q) * Yt, arma::solve_opts::fast);
-  fd->z = Yt - M * beta;
-
-  //' @ref https://github.com/cran/DiceKriging/blob/master/R/computeAuxVariables.R
-  double sigma2_hat = arma::accu(fd->z % fd->z) / n;
-  // arma::cout << "sigma2_hat:" << sigma2_hat << arma::endl;
-
-  double minus_ll = /*-*/ 0.5 * (n * log(2 * M_PI * sigma2_hat) + 2 * sum(log(fd->T.diag())) + n);
+    //' @ref https://github.com/cran/DiceKriging/blob/master/R/computeAuxVariables.R
+    fd->sigma2_hat = arma::accu(fd->z % fd->z) / n;
+    // arma::cout << "sigma2_hat:" << sigma2_hat << arma::endl;
+  } //else arma::cout << "using last results" << arma::endl;
+  
+  double minus_ll = /*-*/ 0.5 * (n * log(2 * M_PI * fd->sigma2_hat) + 2 * sum(log(fd->T.diag())) + n);
   // arma::cout << "ll:" << -minus_ll << arma::endl;
 
   if (grad_out != nullptr) {
@@ -215,12 +220,12 @@ double OrdinaryKriging::fit_ofn(const arma::vec& _theta,
       arma::mat gradR_k_upper = arma::zeros(n, n);
       for (arma::uword i = 0; i < n; i++) {
         for (arma::uword j = 0; j < i; j++) {
-          gradR_k_upper.at(j,i) = CovNorm_deriv(Xtnorm.col(i), Xtnorm.col(j), k);
+          gradR_k_upper.at(j,i) = CovNorm_deriv(fd->Xtnorm.col(i), fd->Xtnorm.col(j), k);
         }
       }
       gradR_k_upper /= _theta(k);
 
-      double terme1 = arma::accu(xx/*_upper*/ % gradR_k_upper) / sigma2_hat;//as_scalar((trans(x) * gradR_k) * x)/ sigma2_hat;
+      double terme1 = arma::accu(xx/*_upper*/ % gradR_k_upper) / fd->sigma2_hat;//as_scalar((trans(x) * gradR_k) * x)/ sigma2_hat;
       double terme2 = -arma::accu(Rinv/*_upper*/ % gradR_k_upper);//-arma::trace(Rinv * gradR_k);
       (*grad_out).at(k) = - (terme1 + terme2);
       // (*grad_out)(k) = - arma::accu(dot(xx / sigma2_hat - Rinv, gradR_k_upper));

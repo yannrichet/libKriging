@@ -16,7 +16,7 @@ for (i in 1:length(logn)) {
   y = f(X)
   
   times$R[i] = system.time(
-    try(k <- DiceKriging::km(design=X,response=y,covtype = "gauss", multistart = 10,control = list(trace=T,maxit=10), lower=rep(0.001,d),upper=rep(2*sqrt(d),d)))
+    try(k <- DiceKriging::km(design=X,response=y,covtype = "gauss", multistart = 10,control = list(trace=F,maxit=10), lower=rep(0.001,d),upper=rep(2*sqrt(d),d)))
   )[1]
   
   times$cpp[i] = system.time(
