@@ -1,9 +1,9 @@
 library(foreach)
 registerDoSEQ()
 
-f = function(X) apply(X,1,function(x) sum((x-.5)^2))
+f = function(X) apply(X,1,function(x) prod(sin(pi*(x-.5))))
 
-logn = seq(1,2,by=.1)
+logn = seq(1,2.5,by=.1)
 times = list(R=rep(NA,length(logn)),cpp=rep(NA,length(logn)))
 
 for (i in 1:length(logn)) {
@@ -33,7 +33,7 @@ for (i in 1:length(logn)) {
   if (abs(ll_cpp - DiceKriging::logLikFun(param=as.numeric(ordinary_kriging_model(r)$theta),model=k))/ll_cpp>.1)
     stop("LL function is not the same bw DiceKriging/libKriging: ",ordinary_kriging_loglikelihood(r,ordinary_kriging_model(r)$theta)," vs. ",DiceKriging::logLikFun(param=as.numeric(ordinary_kriging_model(r)$theta),model=k))  
   
-  if ((ll_cpp - ll_R)/ll_R < -.01 )
+  if ((ll_cpp - ll_R)/abs(ll_R) < -.01 )
     warning("libKriging LL ",ll_cpp," << DiceKriging LL ",ll_R)
   
 }
