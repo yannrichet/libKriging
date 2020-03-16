@@ -126,7 +126,7 @@ inline arma::vec rosenbrock_grad(arma::vec X) noexcept {
   return g;
 };
 
-  double ofn(const arma::vec& x,arma::vec* grad_out,void* ofn_data) {
+  double ofn_rosenbrock(const arma::vec& x,arma::vec* grad_out,void* ofn_data) {
     if (ofn_data) {
     Bench::OFNData* fd = reinterpret_cast<Bench::OFNData*>(ofn_data);
     if (fd->histx.n_cols != x.n_elem)
@@ -157,22 +157,22 @@ inline arma::vec rosenbrock_grad(arma::vec X) noexcept {
       arma::mat Bench::OptimRosenbrock(arma::vec& x0) {
 
     optim::algo_settings_t algo_settings;
+        algo_settings.vals_bound = true;
+        algo_settings.lower_bounds = arma::zeros<arma::vec>(2);
+        algo_settings.upper_bounds = arma::ones<arma::vec>(2);
+        
         // algo_settings.gd_method=0;
         // algo_settings.gd_settings.step_size=0.1;
-    algo_settings.iter_max = 100;  // TODO change by default?
+    algo_settings.iter_max = 10;  // TODO change by default?
     algo_settings.err_tol = 1e-9;
     // algo_settings.gd_method = 2; // Nesterov accerlrated GD
-    
-    algo_settings.vals_bound = true;
-    algo_settings.lower_bounds = arma::zeros<arma::vec>(2);
-    algo_settings.upper_bounds = arma::ones<arma::vec>(2);
 
     Bench::OFNData ofn_data; // FIXME AFTER
     arma::cout << "> ";
     ofn_data.histx = arma::zeros(1,2);
-      bool bfgs_ok = optim::lbfgs(
+      bool bfgs_ok = optim::gd(
         x0,
-        ofn,
+        ofn_rosenbrock,
         (void*)(&ofn_data),
         algo_settings);
       arma::cout << " <" << arma::endl;
