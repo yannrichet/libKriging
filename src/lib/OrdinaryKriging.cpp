@@ -126,11 +126,11 @@ double OrdinaryKriging::fit_ofn(const arma::vec& _theta,
 
   arma::uword n = m_X.n_rows;
   
-  if ( ! approx_equal(fd->last_theta, _theta,"abstol",1e-8)) {
+  if ( ! approx_equal(fd->last_theta, _theta,"abstol",1e-8)) { 
+    arma::cout << "o";
+    
     fd->last_theta = _theta;
     
-    // arma::cout << "_theta:" << _theta << arma::endl;
-
     //' @ref https://github.com/cran/DiceKriging/blob/master/R/logLikFun.R
     //  model@covariance <- vect2covparam(model@covariance, param)
     //  model@covariance@sd2 <- 1		# to get the correlation matrix
@@ -182,58 +182,61 @@ double OrdinaryKriging::fit_ofn(const arma::vec& _theta,
 
     //' @ref https://github.com/cran/DiceKriging/blob/master/R/computeAuxVariables.R
     fd->sigma2_hat = arma::accu(fd->z % fd->z) / n;
-    // arma::cout << "sigma2_hat:" << sigma2_hat << arma::endl;
-  } //else arma::cout << "using last results" << arma::endl;
+    
+    fd->ll = -0.5 * (n * log(2 * M_PI * fd->sigma2_hat) + 2 * sum(log(fd->T.diag())) + n);
+
+    if (grad_out) {
+      arma::cout << "g";
+      //' @ref https://github.com/cran/DiceKriging/blob/master/R/logLikGrad.R
+      //  logLik.derivative <- matrix(0,nparam,1)
+      //  x <- backsolve(T,z)			# compute x := T^(-1)*z
+      //  Rinv <- chol2inv(T)			# compute inv(R) by inverting T
+      //
+      //  Rinv.upper <- Rinv[upper.tri(Rinv)]
+      //  xx <- x%*%t(x)
+      //  xx.upper <- xx[upper.tri(xx)]
+      //
+      //  for (k in 1:nparam) {
+      //    gradR.k <- CovMatrixDerivative(model@covariance, X=model@X, C0=R, k=k)
+      //    gradR.k.upper <- gradR.k[upper.tri(gradR.k)]
+      //
+      //    terme1 <- sum(xx.upper*gradR.k.upper)   / sigma2.hat
+      //    # quick computation of t(x)%*%gradR.k%*%x /  ...
+      //    terme2 <- - sum(Rinv.upper*gradR.k.upper)
+      //    # quick computation of trace(Rinv%*%gradR.k)
+      //    logLik.derivative[k] <- terme1 + terme2
+      //  }
+      arma::mat Linv = solve(trimatl(fd->T), arma::eye(n,n),arma::solve_opts::fast);
+      arma::mat Rinv = trans(Linv) * Linv;  //inv_sympd(R);
+      // arma::mat Rinv_upper = trimatu(Rinv);
   
-  double minus_ll = /*-*/ 0.5 * (n * log(2 * M_PI * fd->sigma2_hat) + 2 * sum(log(fd->T.diag())) + n);
-  // arma::cout << "ll:" << -minus_ll << arma::endl;
-
-  if (grad_out != nullptr) {
-    //' @ref https://github.com/cran/DiceKriging/blob/master/R/logLikGrad.R
-    //  logLik.derivative <- matrix(0,nparam,1)
-    //  x <- backsolve(T,z)			# compute x := T^(-1)*z
-    //  Rinv <- chol2inv(T)			# compute inv(R) by inverting T
-    //
-    //  Rinv.upper <- Rinv[upper.tri(Rinv)]
-    //  xx <- x%*%t(x)
-    //  xx.upper <- xx[upper.tri(xx)]
-    //
-    //  for (k in 1:nparam) {
-    //    gradR.k <- CovMatrixDerivative(model@covariance, X=model@X, C0=R, k=k)
-    //    gradR.k.upper <- gradR.k[upper.tri(gradR.k)]
-    //
-    //    terme1 <- sum(xx.upper*gradR.k.upper)   / sigma2.hat
-    //    # quick computation of t(x)%*%gradR.k%*%x /  ...
-    //    terme2 <- - sum(Rinv.upper*gradR.k.upper)
-    //    # quick computation of trace(Rinv%*%gradR.k)
-    //    logLik.derivative[k] <- terme1 + terme2
-    //  }
-    arma::mat Linv = solve(trimatl(fd->T), arma::eye(n,n),arma::solve_opts::fast);
-    arma::mat Rinv = trans(Linv) * Linv;  //inv_sympd(R);
-    // arma::mat Rinv_upper = trimatu(Rinv);
-
-    arma::mat x = solve(trimatu(trans(fd->T)), fd->z,arma::solve_opts::fast);
-    arma::mat xx = x * trans(x);
-    // arma::mat xx_upper = trimatu(xx);
-
-    for (arma::uword k = 0; k < m_X.n_cols; k++) {
-      arma::mat gradR_k_upper = arma::zeros(n, n);
-      for (arma::uword i = 0; i < n; i++) {
-        for (arma::uword j = 0; j < i; j++) {
-          gradR_k_upper.at(j,i) = CovNorm_deriv(fd->Xtnorm.col(i), fd->Xtnorm.col(j), k);
+      arma::mat x = solve(trimatu(trans(fd->T)), fd->z,arma::solve_opts::fast);
+      arma::mat xx = x * trans(x);
+      // arma::mat xx_upper = trimatu(xx);
+  
+      for (arma::uword k = 0; k < m_X.n_cols; k++) {
+        arma::mat gradR_k_upper = arma::zeros(n, n);
+        for (arma::uword i = 0; i < n; i++) {
+          for (arma::uword j = 0; j < i; j++) {
+            gradR_k_upper.at(j,i) = CovNorm_deriv(fd->Xtnorm.col(i), fd->Xtnorm.col(j), k);
+          }
         }
+        gradR_k_upper /= _theta(k);
+  
+        double terme1 = arma::accu(xx/*_upper*/ % gradR_k_upper) / fd->sigma2_hat;//as_scalar((trans(x) * gradR_k) * x)/ sigma2_hat;
+        double terme2 = -arma::accu(Rinv/*_upper*/ % gradR_k_upper);//-arma::trace(Rinv * gradR_k);
+        (*grad_out).at(k) = - (terme1 + terme2);
+        // (*grad_out)(k) = - arma::accu(dot(xx / sigma2_hat - Rinv, gradR_k_upper));
       }
-      gradR_k_upper /= _theta(k);
-
-      double terme1 = arma::accu(xx/*_upper*/ % gradR_k_upper) / fd->sigma2_hat;//as_scalar((trans(x) * gradR_k) * x)/ sigma2_hat;
-      double terme2 = -arma::accu(Rinv/*_upper*/ % gradR_k_upper);//-arma::trace(Rinv * gradR_k);
-      (*grad_out).at(k) = - (terme1 + terme2);
-      // (*grad_out)(k) = - arma::accu(dot(xx / sigma2_hat - Rinv, gradR_k_upper));
+      fd->grad = grad_out;
+      // arma::cout << "Grad: " << *grad_out <<  arma::endl;
     }
-    // arma::cout << "Grad: " << *grad_out <<  arma::endl;
+  } else {
+    arma::cout << ".";
+    grad_out = fd->grad;
   }
-
-  return minus_ll;
+  
+  return -fd->ll;
 }
 
 LIBKRIGING_EXPORT double OrdinaryKriging::logLikelihood(const arma::vec& _theta) {
@@ -290,6 +293,7 @@ LIBKRIGING_EXPORT void OrdinaryKriging::fit(const arma::colvec& y,
     optim::algo_settings_t algo_settings;
     algo_settings.iter_max = 10;  // TODO change by default?
     algo_settings.err_tol = 1e-5;
+    // algo_settings.gd_method = 2; // Nesterov accerlrated GD
     algo_settings.vals_bound = true;
     algo_settings.lower_bounds = 0.001*arma::ones<arma::vec>(X.n_cols);
     algo_settings.upper_bounds = 2*sqrt(X.n_cols)*arma::ones<arma::vec>(X.n_cols);
@@ -297,19 +301,20 @@ LIBKRIGING_EXPORT void OrdinaryKriging::fit(const arma::colvec& y,
     for (arma::uword i = 0; i < theta0.n_rows; i++) {  // TODO: use some foreach/pragma to let OpenMP work.
       arma::vec theta_tmp = trans(theta0.row(i));     // FIXME arma::mat replaced by arma::vec
       OrdinaryKriging::OKModel okm_data;
-      bool bfgs_ok = optim::lbfgs(
+      arma::cout << "> ";
+      bool bfgs_ok = optim::bfgs(
           theta_tmp,
           [&okm_data, this](const arma::vec& vals_inp, arma::vec* grad_out, void*) -> double {
             return fit_ofn(vals_inp, grad_out, &okm_data);
           },
           nullptr,
           algo_settings);
-
       // if (bfgs_ok) { // FIXME always succeeds ?
       double minus_ll_tmp
           = fit_ofn(theta_tmp,
                     nullptr,
                     &okm_data);  // this last call also ensure that T and z are up-to-date with solution found.
+      arma::cout << " <" << arma::endl;
       if (minus_ll_tmp < minus_ll) {
         m_theta = std::move(theta_tmp);
         minus_ll = minus_ll_tmp;

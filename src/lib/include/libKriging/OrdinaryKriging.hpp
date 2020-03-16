@@ -49,6 +49,8 @@ class OrdinaryKriging {
     arma::mat Xtnorm;
     double sigma2_hat;
     arma::vec last_theta;
+    double ll;
+    arma::vec* grad;
   };
 
   double fit_ofn(const arma::vec& _theta, arma::vec* grad_out, OrdinaryKriging::OKModel* okm_data) const;
