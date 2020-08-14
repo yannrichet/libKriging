@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-if [[ "$DEBUG_CI" == true ]]; then
+BASEDIR=$(dirname "$0")
+BASEDIR=$(readlink -f "${BASEDIR}")
+
+if [[ "$DEBUG_CI" == "true" ]]; then
+  CTEST_FLAGS=--verbose
   set -x
+else
+  CTEST_FLAGS=--output-on-failure
 fi
 
-if [[ "$MODE" == "Coverage" ]]; then
+if [[ "$ENABLE_COVERAGE" == "on" ]]; then
     echo "Coverage not supported for Windows"
     travis_terminate 1
 fi
+
+. ${BASEDIR}/loadenv.sh
 
 cd build
 
@@ -16,7 +24,5 @@ cd build
 rm -fr src/lib
 # add library directory search PATH for executables
 export PATH=$PWD/installed/bin:$PATH
-# add OpenBLAS DLL library path
-export PATH=$HOME/Miniconda3/Library/bin:$PATH
 
-ctest -C ${MODE} # --verbose
+ctest -C "${MODE}" ${CTEST_FLAGS}
