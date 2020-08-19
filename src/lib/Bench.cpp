@@ -8,7 +8,7 @@
 #include "libKriging/OrdinaryKriging.hpp"
 
 #include <armadillo>
-// #include <optim.hpp>
+#include <optim.hpp>
 #include <tuple>
 
 // #include "libKriging/covariance.h"
@@ -109,4 +109,75 @@ arma::vec Bench::LogLikGrad(OrdinaryKriging& ok, const arma::vec& theta) {
     s += ok.logLikelihoodGrad(theta);
   }
   return s / n;
-}
+  }
+
+
+double a = .5;
+double b = 50;
+inline double rosenbrock_fun(arma::vec X) noexcept {
+  return (a-X(0))*(a-X(0))+b*(X(1)-X(0)*X(0))*(X(1)-X(0)*X(0));
+};
+inline arma::vec rosenbrock_grad(arma::vec X) noexcept {
+  arma::vec g = arma::zeros(2);
+  g(0) = -2*(a-X(0)) + 4*b*(X(0)*X(0)*X(0) - X(1)*X(0));
+  g(1) = 2*b*(X(1) - X(0)*X(0));
+  return g;
+};
+
+  double ofn_rosenbrock(const arma::vec& x,arma::vec* grad_out,void* ofn_data) {
+    if (ofn_data) {
+    Bench::OFNData* fd = reinterpret_cast<Bench::OFNData*>(ofn_data);
+    if (fd->histx.n_cols != x.n_elem)
+      fd->histx = arma::reshape(x,1,x.n_elem);
+    else
+      fd->histx.insert_rows(fd->histx.n_rows,trans(arma::mat(x)));
+    }
+    arma::cout << "x "<< x << arma::endl;
+    if (grad_out) {
+      arma::cout << "g";
+      *grad_out = rosenbrock_grad(x);
+    } else     arma::cout << "o";
+    
+    return rosenbrock_fun(x);
+  }
+  
+  LIBKRIGING_EXPORT
+    double Bench::Rosenbrock(arma::vec& x) {
+      return rosenbrock_fun(x);
+    } 
+  
+  LIBKRIGING_EXPORT
+    arma::vec Bench::RosenbrockGrad(arma::vec& x) { 
+      return rosenbrock_grad(x);
+    } 
+  
+  LIBKRIGING_EXPORT
+    arma::mat Bench::OptimRosenbrock(arma::vec& x0) {
+      
+      optim::algo_settings_t algo_settings;
+      algo_settings.vals_bound = true;
+      algo_settings.lower_bounds = arma::zeros<arma::vec>(2);
+      algo_settings.upper_bounds = arma::ones<arma::vec>(2);
+      
+      algo_settings.iter_max = 10;  // TODO change by default?
+      algo_settings.err_tol = 1e-9;
+      
+      algo_settings.gd_method = 2;
+      algo_settings.gd_settings.step_size=0.01;
+      algo_settings.gd_settings.norm_term=1E-7;
+      algo_settings.gd_settings.ada_rho=0.9;
+      
+      algo_settings.cg_method = 2; 
+      
+      Bench::OFNData ofn_data; // FIXME AFTER
+      arma::cout << "> bfgs 2 ";
+      ofn_data.histx = arma::zeros(1,2);
+      bool bfgs_ok = optim::cg(
+        x0,
+        ofn_rosenbrock,
+        (void*)(&ofn_data),
+        algo_settings);
+      arma::cout << " <" << arma::endl;
+      
+      return ofn_data.histx;
+    }
