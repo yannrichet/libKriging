@@ -1,0 +1,20 @@
+---
+title: "Bench"
+author: "Y. RICHET"
+date: "19/08/2020"
+output: html_document
+---
+
+# Optim benchmark
+
+```{bash}
+cd $LIBKRIGING_PATH
+
+.travis-ci/r-linux-macos/build.sh
+
+cd bindings/R
+R CMD INSTALL -l bench --no-multiarch --with-keep.source rlibkriging*.tar.gz
+
+cd bench
+Rscript -e "library('rlibkriging',lib.loc='.'); png('bench-optim.png',800,800); source('bench-optim.R'); dev.off()"
+```
